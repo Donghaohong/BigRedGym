@@ -11,6 +11,7 @@ from tests.unit_tests.mock_backend import MockBackend
 # Path to the pendulum URDF used by MuJoCo backend fixtures
 from gym import GYM_ROOT_DIR
 from gym.envs.base.domain_randomization import DomainRandomizationCfg
+from gym.envs.base.mujoco_config import MuJoCoCfg
 
 PENDULUM_URDF = os.path.join(
     GYM_ROOT_DIR, "resources", "robots", "pendulum", "urdf", "pendulum.urdf"
@@ -74,6 +75,7 @@ def _make_pendulum_cfg(sim_dt: float = 0.005) -> types.SimpleNamespace:
     """Minimal cfg-like object for the pendulum, no task registry needed."""
     asset = types.SimpleNamespace(
         file=PENDULUM_URDF,
+        vsim_visual_mesh_dir=None,
         joint_damping=0.1,
         rotor_inertia=0.0,
         disable_gravity=False,
@@ -84,6 +86,7 @@ def _make_pendulum_cfg(sim_dt: float = 0.005) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         asset=asset,
         domain_randomization=DomainRandomizationCfg(),
+        mujoco=MuJoCoCfg(),
         sim=sim,
         sim_dt=sim_dt,
     )
@@ -200,6 +203,7 @@ def _make_mini_cheetah_cfg(sim_dt: float = 0.002) -> types.SimpleNamespace:
     """Minimal cfg for mini_cheetah (floating-base, 12 DOFs)."""
     asset = types.SimpleNamespace(
         file=MINI_CHEETAH_URDF,
+        vsim_visual_mesh_dir=None,
         joint_damping=0.01,
         rotor_inertia=0.0,
         disable_gravity=False,
@@ -217,6 +221,7 @@ def _make_mini_cheetah_cfg(sim_dt: float = 0.002) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         asset=asset,
         domain_randomization=DomainRandomizationCfg(),
+        mujoco=MuJoCoCfg(),
         sim=sim,
         terrain=terrain,
         sim_dt=sim_dt,

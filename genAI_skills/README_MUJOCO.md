@@ -136,6 +136,15 @@ uv run --frozen --extra vsim --env-file .env.vsim scripts/train.py --task mini_c
 
 Never commit the wheel, license files, or activation data.
 
+Go2 and Go2Trot also use the VSim repository's visual meshes from
+`thirdparty/vlearn/assets/go2/assets/` (the `*.obj` files). Keep that directory
+from the SDK checkout, along with `assets/licenses/go2-LICENSE.txt`. If your
+SDK is elsewhere, set `asset.vsim_visual_mesh_dir` in the Go2 config to its
+`assets/go2/assets` directory. The wheel alone does not include these meshes.
+VSim substitutes these visuals before converting our URDF; joints, collisions,
+and inertias still come from our robot, not the vendor's `go2_og.vsim`.
+MuJoCo does not need this directory.
+
 ### Optional Unitree Go2 deployment setup
 
 Training and simulation do not require the Unitree SDK. On Linux, hardware
@@ -291,6 +300,11 @@ run VSim, MuJoCo Warp, or Unitree integration. Optional vendor installation and
 activation instructions describe prerequisites; they do not establish current
 backend validation. Record which optional checks actually executed.
 
+The Go2 visual-mesh replacement has portable XML tests for preserved physical
+properties and link-local visual frames, including preprocessing before conversion.
+Those tests use a stand-in converter; they do not establish native VSim import
+or rendering correctness.
+
 Standalone policy evaluators, comparison reports, benchmark/profile tools, and
 their analysis helpers are no longer included. Training, playback,
 `--original_cfg`, and ordinary W&B logging remain available. The retired pendulum
@@ -356,6 +370,29 @@ With `--backend mujoco` (the default), the backend is selected by `--device`:
 - `cuda:0` → MuJocoWarpBackend
 
 Use `--backend vsim --device cuda:0` to select the licensed VSim backend.
+
+### MuJoCo configuration
+
+Both MuJoCo backends read one `cfg.mujoco` section. Override individual fields
+by inheriting the task's section:
+
+```python
+class MyGo2Cfg(Go2Cfg):
+    class mujoco(Go2Cfg.mujoco):
+        njmax = 300
+        ccd_iterations = 75
+```
+
+The supported settings are `njmax` (Warp constraint-row capacity per world),
+`ccd_iterations` (collision-detection iterations), `disableflags` (MuJoCo's
+disable-bit mask), and `solref` (contact solver reference for all geometries).
+Robot-specific defaults preserve each task's contact tuning. Simulation timing
+still comes from `control.desired_sim_frequency`, not this section. VSim does
+not consume these MuJoCo settings.
+
+This replaces `mjspec_attributes`, `mjspec_option_attributes`, and
+`mjspec_geom_attributes`. Configs must use the unified section; older saved
+configs are not converted automatically.
 
 ## Canonical Robot Layout
 
