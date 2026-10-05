@@ -10,7 +10,8 @@ gpuGym.egg-info/
 __pycache__
 *.pyc 
 wandb/
-.vscode/
+.vscode/*
+!.vscode/launch.json
 gym/wandb
 *.DS_Store
 *.zip

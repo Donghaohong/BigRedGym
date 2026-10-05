@@ -12,6 +12,45 @@ Create the venv using uv:
 
 Note: you will need to use the ```--frozen``` flag every time you run a python script in this repo when the optional VSim wheel or Unitree SDK checkout is absent. example: ```uv run --frozen scripts/train.py --task=go2trot  --device=cuda:0 --headless --max_iterations=300```
 
+## VS Code debugger
+
+After `uv sync --frozen`, open the repository folder in VS Code with the Microsoft
+Python and Python Debugger extensions installed. Select **Train Go2 (viewer)** in
+Run and Debug, then press **F5**.
+
+The shared [.vscode/launch.json](.vscode/launch.json) selects `.venv/bin/python`
+on Linux, `.venv/Scripts/python.exe` on Windows, and `.venv/bin/mjpython` on macOS.
+Edit the single `args` list to change the task, device, environment count, or
+other CLI options. macOS users who encounter the library-loading error should
+apply the workaround below first.
+
+## macOS
+
+The [MuJoCo passive viewer](https://mujoco.readthedocs.io/en/stable/python.html#passive-viewer)
+requires `mjpython` on macOS. Start with fewer environments than the Go2 trot
+default of 4096 when running on CPU:
+
+```sh
+.venv/bin/mjpython scripts/train.py --task=go2trot --device=cpu --num_envs=16
+```
+
+If `mjpython` fails with `Library not loaded: @executable_path/../lib/libpython3.11.dylib`,
+it is looking for uv's Python library relative to `.venv`. For this error, link
+the existing library into `.venv/lib`, then rerun the command above:
+
+```sh
+ln -s "$(.venv/bin/python -c 'import sys; print(sys.base_prefix)')/lib/libpython3.11.dylib" .venv/lib/libpython3.11.dylib
+```
+
+This workaround is local to the virtual environment; repeat it if you recreate
+`.venv` and encounter the error again.
+
+For training without a viewer, use regular Python with `--headless`:
+
+```sh
+uv run --frozen scripts/train.py --task=go2trot --device=cpu --num_envs=16 --headless
+```
+
 # Training
 
 To train, run ```scripts/train.py```:
