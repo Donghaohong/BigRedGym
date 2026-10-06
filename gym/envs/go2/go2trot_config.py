@@ -79,11 +79,19 @@ class Go2TrotCfg(Go2Cfg):
             }
 
     class asset(Go2Cfg.asset):
-        penalize_contacts_on = ["calf", "hip"]
-        terminate_after_contacts_on = ["base", "Head_upper", "Head_lower"]
+        file = "{GYM_ROOT_DIR}/resources/robots/" + "go2/urdf/go2.urdf"
+        # Use the SDK's OBJ visuals; keep our URDF's complete physical model.
+        vsim_visual_mesh_dir = "{GYM_ROOT_DIR}/thirdparty/vlearn/assets/go2/assets"
+        foot_name = "foot"
+        penalize_contacts_on = ["calf"]
+        terminate_after_contacts_on = ["base"]
+        end_effector_names = ["foot"]
+        fix_base_link = False
+        disable_gravity = False
+        disable_motors = False
 
     class reward_settings(Go2Cfg.reward_settings):
-        base_height_target = 0.9 * Go2Cfg.reward_settings.base_height_target
+        base_height_target = Go2Cfg.reward_settings.base_height_target
 
     class scaling(Go2Cfg.scaling):
         # Canonical RobotLayout order is FL, FR, RL, RR, with
@@ -96,27 +104,92 @@ class Go2TrotCfg(Go2Cfg):
 
 
 class Go2TrotRunnerCfg(Go2RunnerCfg):
-    class actor(Go2RunnerCfg.actor):
-        obs = Go2RunnerCfg.actor.obs + ["phase_obs", "phase_frequency"]
-        add_noise = True
+    class actor:
+        hidden_dims = [256, 256, 128]
+        # * can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+        activation = "elu"
+        obs = [
+            "base_ang_vel",
+            "projected_gravity",
+            "commands",
+            "dof_pos_obs",
+            "dof_vel",
+            "dof_pos_target",
+        ]
+        normalize_obs = False
+        smooth_exploration = False
+        actions = ["dof_pos_target"]
+        add_noise = False
+        disable_actions = False
 
-    class critic(Go2RunnerCfg.critic):
-        obs = Go2RunnerCfg.critic.obs + ["phase_obs", "phase_frequency"]
+        class noise:
+            scale = 1.0
+            dof_pos_obs = 0.01
+            base_ang_vel = 0.01
+            dof_pos = 0.005
+            dof_vel = 0.005
+            lin_vel = 0.05
+            ang_vel = [0.3, 0.15, 0.4]
+            gravity_vec = 0.1
+
+    class critic:
+        hidden_dims = [128, 64]
+        # * can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+        activation = "elu"
+        obs = [
+            "base_height",
+            "base_lin_vel",
+            "base_ang_vel",
+            "projected_gravity",
+            "commands",
+            "dof_pos_obs",
+            "dof_vel",
+            "dof_pos_target",
+        ]
         normalize_obs = False
 
-        class reward(Go2RunnerCfg.critic.reward):
-            class weights(Go2RunnerCfg.critic.reward.weights):
+        class reward:
+            class weights:
+                tracking_lin_vel = 4.0
+                tracking_ang_vel = 2.0
+                lin_vel_z = 0.0
+                ang_vel_xy = 0.01
+                orientation = 1.0
+                torques = 5.0e-6
+                dof_vel = 0.0
+                stand_still = 0.0
+                dof_pos_limits = 0.0
+                feet_contact_forces = 0.0
+                dof_near_home = 0.0
                 min_base_height = 0.5
                 action_rate = 0.25
                 action_rate2 = 0.025
-                # Preserve the old combined term's approximate +/-0.625 range,
-                # while making both stance feet necessary for positive credit.
                 trot_support = 0.625
                 swing_contact = 1.25
 
-    class algorithm(Go2RunnerCfg.algorithm):
+            class termination_weight:
+                termination = 0.01
+
+    class algorithm:
+        # both
+        gamma = 0.99
+        lam = 0.95
+        # shared
+        batch_size = 2**15
+        max_gradient_steps = 24
+        # new
+        clip_param = 0.2
+        learning_rate = 1.0e-3
+        max_grad_norm = 1.0
         rollout_size = 2**16
-        max_gradient_steps = 32
+        # Critic
+        use_clipped_value_loss = True
+        # Actor
+        entropy_coef = 0.01
+        schedule = "adaptive"  # could be adaptive, fixed
+        desired_kl = 0.01
+        lr_range = [2e-5, 1e-2]
+        lr_ratio = 1.5
 
     class runner(Go2RunnerCfg.runner):
         experiment_name = "go2trot"
