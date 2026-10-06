@@ -43,6 +43,7 @@ class FakeBackend:
         self._viewer_key_callback = None
         self.window_closed = False
         self.escape_key = "<ESC>"  # stands in for vlearn's UserKey.Escape
+        self.special_keys = {"UP": object(), "DOWN": object()}
 
     def add_render_hook(self, fn):
         self._render_hooks.append(fn)
@@ -79,15 +80,21 @@ def test_bindings_avoid_vsim_reserved_keys():
 
 
 def test_both_interfaces_use_the_same_bindings():
-    """MuJoCo keycodes must be exactly ord() of the shared letters."""
-    assert KEYCODE_TO_ACTION == {ord(k): a for k, a in KEY_TO_ACTION.items()}
+    """Both adapters dispatch all actions in the shared table."""
+    for key, action in KEY_TO_ACTION.items():
+        if len(key) == 1:
+            assert KEYCODE_TO_ACTION[ord(key)] == action
     assert set(KEYCODE_TO_ACTION.values()) == set(BINDINGS.keys())
+    _, ui, _ = _make_vsim()
+    assert set(ui._key_to_action.values()) == set(BINDINGS.keys())
 
 
-def test_keys_are_unique_and_alphanumeric():
-    # vsim's is_key_down only accepts alphanumerics as strings.
+def test_keys_are_unique_letters_or_named_specials():
     assert len(set(BINDINGS.values())) == len(BINDINGS)
-    assert all(k.isalnum() and k.isupper() for k in BINDINGS.values())
+    assert all(
+        (len(k) == 1 and k.isalnum() and k.isupper()) or k in {"UP", "DOWN"}
+        for k in BINDINGS.values()
+    )
 
 
 # ── vsim: polling + edge detection ───────────────────────────────────────
@@ -125,6 +132,23 @@ def test_r_resets_once_per_press():
     assert env.timed_out.all()
 
 
+@pytest.mark.parametrize("key, action", [("UP", "up"), ("DOWN", "down")])
+def test_vsim_arrows_dispatch_on_rising_edges(key, action):
+    env, ui, render = _make_vsim()
+    actions = []
+    ui.commands.apply = actions.append
+    # The renderer requires an enum value, not the shared key-name string.
+    render.held = {env._backend.special_keys[key]}
+    for _ in range(3):
+        ui.poll(render)
+    assert actions == [action]
+    render.held.clear()
+    ui.poll(render)
+    render.held = {env._backend.special_keys[key]}
+    ui.poll(render)
+    assert actions == [action, action]
+
+
 def test_escape_and_window_close_set_exit():
     env, ui, render = _make_vsim()
     ui.poll(render)
@@ -159,6 +183,15 @@ def test_mujoco_ignores_unbound_keys():
     before = env.commands.clone()
     ui._on_key(ord("Z"))  # not bound
     assert torch.equal(env.commands, before)
+
+
+@pytest.mark.parametrize("keycode, action", [(265, "up"), (264, "down")])
+def test_mujoco_arrows_dispatch(keycode, action):
+    ui = MujocoKeyboardInterface(FakeEnv())
+    actions = []
+    ui.commands.apply = actions.append
+    ui._on_key(keycode)
+    assert actions == [action]
 
 
 # ── Command semantics (shared by both) ───────────────────────────────────

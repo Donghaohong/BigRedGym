@@ -84,7 +84,7 @@ class Go2Cfg(LeggedRobotCfg):
         stiffness = {"hip": 20.0, "thigh": 20.0, "calf": 20.0}
         damping = {"hip": 0.5, "thigh": 0.5, "calf": 0.5}
         ctrl_frequency = 100
-        desired_sim_frequency = 500
+        desired_sim_frequency = 100
 
     class commands:
         # * time before command are changed[s]

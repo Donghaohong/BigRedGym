@@ -798,6 +798,11 @@ class VSimBackend(SimBackend):
             line.set_points([self._v.Vec3(*p) for p in points])
 
     @property
+    def special_keys(self):
+        """Translate shared special-key names into vlearn's UserKey enum."""
+        return {"UP": self._v.UserKey.Up, "DOWN": self._v.UserKey.Down}
+
+    @property
     def escape_key(self):
         """UserKey.Escape — lets interfaces poll specials without importing
         vlearn themselves (see VsimKeyboardInterface)."""

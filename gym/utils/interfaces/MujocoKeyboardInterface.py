@@ -11,9 +11,13 @@ teleop_bindings.py for the key layout and why it is IJKL/NM.
 
 from gym.utils.interfaces.teleop_bindings import KEY_TO_ACTION, TeleopCommands
 
-# GLFW uses ASCII codes for letter keys, so the shared letter table gives
-# the keycodes directly.  Hardcoded to avoid a glfw dependency.
-KEYCODE_TO_ACTION = {ord(key): action for key, action in KEY_TO_ACTION.items()}
+# GLFW uses ASCII codes for letters and separate codes for special keys.
+# Hardcoded to avoid a glfw dependency.
+SPECIAL_KEYCODES = {"UP": 265, "DOWN": 264}
+KEYCODE_TO_ACTION = {
+    ord(key) if len(key) == 1 else SPECIAL_KEYCODES[key]: action
+    for key, action in KEY_TO_ACTION.items()
+}
 
 
 class MujocoKeyboardInterface:

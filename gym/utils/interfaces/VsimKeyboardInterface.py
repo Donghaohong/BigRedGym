@@ -25,14 +25,19 @@ class VsimKeyboardInterface:
         # vlearn handle, so this module never imports the engine (keeping it
         # testable without a license).
         self._escape_key = env._backend.escape_key
-        self._was_down = {key: False for key in KEY_TO_ACTION}
+        special_keys = env._backend.special_keys
+        self._key_to_action = {
+            key if len(key) == 1 else special_keys[key]: action
+            for key, action in KEY_TO_ACTION.items()
+        }
+        self._was_down = {key: False for key in self._key_to_action}
 
         env._backend.add_render_hook(self.poll)
         self.commands.print_help("vsim viewer")
 
     def poll(self, render) -> None:
         """Called once per rendered frame by VSimBackend.render()."""
-        for key, action in KEY_TO_ACTION.items():
+        for key, action in self._key_to_action.items():
             is_down = render.is_key_down(key)
             if is_down and not self._was_down[key]:
                 self.commands.apply(action)

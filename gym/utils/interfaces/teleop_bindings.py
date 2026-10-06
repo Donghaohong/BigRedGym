@@ -9,7 +9,7 @@ Key choice (2026-07-23) — the constraint is what the viewers reserve:
 * vsim hard-reserves **W A S D** (fly the camera), **P** (pause) and
   **O** (single-step).  Those are actively disruptive, which is why the
   original WASD scheme had to go.  It also only accepts ALPHANUMERIC keys
-  as strings, so punctuation (the old MuJoCo `,`/`.` strafe) is impossible.
+  as strings; special keys must use its UserKey enum.
 * MuJoCo's viewer binds nearly every letter to a visualisation toggle
   (I=inertia, J=joint, K=skybox, L=additive, M=CoM, N=constraint, …), so
   no letter is truly free there; a teleop press may also flip a vis flag.
@@ -24,14 +24,16 @@ natural U/O pair collides with vsim's step toggle:
      N M             N / M   yaw left / right
                      R       reset envs
                      Esc     quit (or close the window)
+                     Up/Down up / down (command effects: student TODO)
 
 GLFW (MuJoCo) uses ASCII codes for letter keys, so `ord(letter)` is the
-keycode — letting both engines share this table verbatim.
+keycode. Each viewer adapter translates named special keys such as UP/DOWN
+into its native key representation.
 """
 
 import torch
 
-# action name → key letter (uppercase; ord() gives the GLFW keycode)
+# action name → uppercase letter or named special key
 BINDINGS = {
     "forward": "I",
     "back": "K",
@@ -39,16 +41,19 @@ BINDINGS = {
     "strafe_right": "L",
     "yaw_left": "N",
     "yaw_right": "M",
+    "up": "UP",
+    "down": "DOWN",
     "reset": "R",
 }
 
-# key letter → action name (what the interfaces poll/dispatch on)
+# key name → action name (translated by each viewer adapter)
 KEY_TO_ACTION = {key: action for action, key in BINDINGS.items()}
 
 HELP_LINES = (
     "  I/K           forward / back",
     "  J/L           strafe left / strafe right",
     "  N/M           yaw left / yaw right",
+    "  Up/Down       up / down (command effects: student TODO)",
     "  R             reset envs",
     "  Esc / window  quit",
     "  commands step in 1/5 increments of max",
