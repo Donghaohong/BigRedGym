@@ -91,10 +91,25 @@ def test_tracking_reward_peaks_at_command_and_decreases_with_error(task):
     torch.testing.assert_close(rewards[0], torch.ones(2))
     assert torch.all(rewards[1] < rewards[0]) and torch.all(rewards[2] < rewards[1])
     torch.testing.assert_close(rewards[3], rewards[2])
-    scale = task.cfg.scaling.base_height
+    scale = task.cfg.reward_settings.base_height_tracking_scale
     sigma = task.cfg.reward_settings.tracking_sigma
     expected = torch.exp(-torch.tensor((0.05 / scale) ** 2 / sigma))
     torch.testing.assert_close(rewards[1], expected.expand(2))
+
+
+def test_tracking_bandwidth_is_independent_of_observation_scale(task):
+    """Tuning the height-reward bandwidth must not touch the obs scaling."""
+    task.base_height_command[:] = task.base_height + 0.05
+    obs_before = task.get_state("base_height_command").clone()
+    sigma = task.cfg.reward_settings.tracking_sigma
+    for scale in (0.3, 0.1):
+        task.cfg.reward_settings.base_height_tracking_scale = scale
+        expected = torch.exp(-torch.tensor((0.05 / scale) ** 2 / sigma))
+        torch.testing.assert_close(
+            task._reward_tracking_base_height(), expected.expand(2)
+        )
+    torch.testing.assert_close(task.get_state("base_height_command"), obs_before)
+    assert task.scales["base_height"] == task.cfg.scaling.base_height
 
 
 def test_height_command_observation_is_scaled(task):

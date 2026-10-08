@@ -243,7 +243,8 @@ class Go2Trot(LeggedRobot):
     def _reward_tracking_base_height(self):
         """Squared exponential tracking of the base-height command"""
         error = (self.base_height - self.base_height_command).flatten()
-        return self._sqrdexp(error / self.scales["base_height"])
+        scale = self.cfg.reward_settings.base_height_tracking_scale
+        return self._sqrdexp(error / scale)
 
     def _reward_tracking_lin_vel(self):
         """Tracking of linear velocity commands (xy axes)"""
