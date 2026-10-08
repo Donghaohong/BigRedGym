@@ -90,7 +90,12 @@ class Go2TrotCfg(Go2Cfg):
         vsim_visual_mesh_dir = "{GYM_ROOT_DIR}/thirdparty/vlearn/assets/go2/assets"
         foot_name = "foot"
         penalize_contacts_on = ["calf"]
-        terminate_after_contacts_on = ["base"]
+        # Substring match on body names: Head_upper/Head_lower and every
+        # *_thigh / *_thigh_rotor body. Termination uses each body's net
+        # contact force, so self-collisions of these bodies (e.g. the two
+        # front thighs) end the episode too. Added after a policy learned to
+        # rest on its head with folded front legs.
+        terminate_after_contacts_on = ["base", "Head", "thigh"]
         end_effector_names = ["foot"]
         fix_base_link = False
         disable_gravity = False
