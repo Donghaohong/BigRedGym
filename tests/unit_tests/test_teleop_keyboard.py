@@ -9,6 +9,8 @@ All of this is pure Python, so it is tested here with fakes: no GPU, no
 license, no window (runs in the default suite).
 """
 
+import types
+
 import pytest
 import torch
 
@@ -223,6 +225,87 @@ def test_commands_clamp_at_limits():
     for _ in range(400):
         cmds.apply("back")
     assert env.commands[0, 0].item() >= cmds.max_vel_backward - 1e-6
+
+
+# ── Base-height command (tasks that define one) ──────────────────────────
+
+
+class FakeHeightEnv(FakeEnv):
+    """FakeEnv plus a base-height command; reset resamples it like _reset_idx
+    unless resampling has been switched off."""
+
+    HEIGHT_RANGE = [0.15, 0.35]
+
+    def __init__(self, num_envs=2):
+        super().__init__(num_envs)
+        self.cfg.commands = types.SimpleNamespace(
+            ranges=types.SimpleNamespace(base_height=list(self.HEIGHT_RANGE)),
+            resample_base_height=True,
+        )
+        self.base_height_command = torch.full((num_envs, 1), 0.25)
+
+    def reset(self):
+        super().reset()
+        if self.cfg.commands.resample_base_height:
+            self.base_height_command.uniform_(*self.HEIGHT_RANGE)
+
+
+def test_teleop_takes_height_command_away_from_the_sampler():
+    env = FakeHeightEnv()
+    TeleopCommands(env)
+    assert env.cfg.commands.resample_base_height is False
+
+
+def test_teleop_leaves_tasks_without_height_command_unconfigured():
+    env = FakeEnv()
+    TeleopCommands(env)
+    assert not hasattr(env.cfg, "commands")
+
+
+def test_up_down_move_height_command_by_a_tenth_of_the_range():
+    env = FakeHeightEnv()
+    cmds = TeleopCommands(env)
+    step = 0.1 * (0.35 - 0.15)
+    cmds.apply("up")
+    torch.testing.assert_close(env.base_height_command, torch.full((2, 1), 0.25 + step))
+    cmds.apply("down")
+    cmds.apply("down")
+    torch.testing.assert_close(env.base_height_command, torch.full((2, 1), 0.25 - step))
+
+
+def test_height_command_clamps_at_range_limits():
+    env = FakeHeightEnv()
+    cmds = TeleopCommands(env)
+    for _ in range(50):
+        cmds.apply("up")
+    assert torch.all(env.base_height_command == 0.35)
+    for _ in range(50):
+        cmds.apply("down")
+    assert torch.all(env.base_height_command == 0.15)
+
+
+def test_up_down_are_ignored_on_tasks_without_height_command(capsys):
+    env = FakeEnv()
+    cmds = TeleopCommands(env)
+    before = env.commands.clone()
+    cmds.apply("up")
+    cmds.apply("down")
+    assert not hasattr(env, "base_height_command")
+    assert torch.equal(env.commands, before)
+    assert "no base-height command" in capsys.readouterr().out
+
+
+def test_reset_keeps_the_operator_height_in_the_same_tensor():
+    env = FakeHeightEnv()
+    cmds = TeleopCommands(env)
+    buffer = env.base_height_command
+    for _ in range(3):
+        cmds.apply("up")
+    held = buffer.clone()
+    cmds.apply("reset")
+    assert env.reset_count == 1
+    assert env.base_height_command is buffer
+    torch.testing.assert_close(buffer, held)
 
 
 # ── Viewer UI panels (MuJoCo) ────────────────────────────────────────────

@@ -24,7 +24,7 @@ natural U/O pair collides with vsim's step toggle:
      N M             N / M   yaw left / right
                      R       reset envs
                      Esc     quit (or close the window)
-                     Up/Down up / down (command effects: student TODO)
+                     Up/Down base-height command up / down
 
 GLFW (MuJoCo) uses ASCII codes for letter keys, so `ord(letter)` is the
 keycode. Each viewer adapter translates named special keys such as UP/DOWN
@@ -53,17 +53,18 @@ HELP_LINES = (
     "  I/K           forward / back",
     "  J/L           strafe left / strafe right",
     "  N/M           yaw left / yaw right",
-    "  Up/Down       up / down (command effects: student TODO)",
-    "  R             reset envs",
+    "  Up/Down       base height up / down (tasks with a height command)",
+    "  R             reset envs (keeps the base-height command)",
     "  Esc / window  quit",
-    "  commands step in 1/5 increments of max",
+    "  commands step in 1/5 increments of max; height in 1/10 of its range",
 )
 
 
 class TeleopCommands:
     """Velocity-command limits, increments, and the effect of each action.
 
-    Engine-agnostic: it only touches ``env.commands`` and the reset path.
+    Engine-agnostic: it only touches ``env.commands``, the reset path, and
+    ``env.base_height_command`` on tasks that define one.
     """
 
     def __init__(self, env):
@@ -83,6 +84,10 @@ class TeleopCommands:
         env.commands[:, 0] = 1.0  # seed forward velocity so motion is visible
         if hasattr(env.cfg, "commands"):
             env.cfg.commands.resampling_time = env.max_episode_length_s + 1
+        if hasattr(env, "base_height_command"):
+            # From here on the height belongs to the operator: neither the
+            # timed resampling above nor a reset may overwrite it.
+            env.cfg.commands.resample_base_height = False
 
     def apply(self, action: str) -> None:
         """Apply one discrete press of ``action`` (see BINDINGS)."""
@@ -101,11 +106,22 @@ class TeleopCommands:
             c[:, 2] = torch.clamp(c[:, 2] + self.increment_yaw, max=self.max_vel_yaw)
         elif action == "yaw_right":
             c[:, 2] = torch.clamp(c[:, 2] - self.increment_yaw, min=-self.max_vel_yaw)
+        elif action in ("up", "down"):
+            self._step_base_height(1.0 if action == "up" else -1.0)
         elif action == "reset":
             self.env.timed_out[:] = True
             self.env.reset()
         else:
             raise ValueError(f"unknown teleop action {action!r}")
+
+    def _step_base_height(self, direction: float) -> None:
+        # Only some tasks have a height command; the arrows are bound for all.
+        if not hasattr(self.env, "base_height_command"):
+            print("teleop: this task has no base-height command; ignoring up/down")
+            return
+        low, high = self.env.cfg.commands.ranges.base_height
+        h = self.env.base_height_command
+        h.add_(direction * 0.1 * (high - low)).clamp_(min=low, max=high)
 
     def print_help(self, viewer_name: str) -> None:
         print("______________________________________________________________")
