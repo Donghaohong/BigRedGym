@@ -106,7 +106,7 @@ class Go2TrotCfg(Go2Cfg):
         # Error normalization [m] of tracking_base_height only. Kept separate
         # from scaling.base_height (observation scale) and tracking_sigma
         # (shared by the velocity rewards) so it can be tuned on its own.
-        base_height_tracking_scale = 0.3
+        base_height_tracking_scale = 0.15
 
     class scaling(Go2Cfg.scaling):
         # Canonical RobotLayout order is FL, FR, RL, RR, with
