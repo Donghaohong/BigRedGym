@@ -18,13 +18,19 @@ recording commanded and actual height for every environment.
   first failure is recorded separately in each phase -- "init" (from the
   reset through the settle segment) and "tracking" (the command steps) -- so
   an early fall does not hide later tracking failures. Every exported file
-  carries the status and these events.
+  carries the stability status and these events.
+
+Stability and tracking are reported separately: ``stability_status`` is
+STABLE when no environment failed, whatever the height error; tracking
+accuracy is the per-segment metrics below, plus, per commanded height, how
+many environment-segments settled (within 1 s, later, never).
 
 Metrics per command segment, over all environments:
   * steady-state error: mean and RMS of (height - command) over the last
     ``--steady`` seconds of the segment;
   * settling time: first time after the step from which |error| stays within
-    ``--band`` for at least ``--hold`` seconds (NaN if never).
+    ``--band`` for at least ``--hold`` seconds (NaN if never);
+  * environments whose steady-state mean error is within ``--band``.
 
 Usage:
     uv run --frozen scripts/plot_height_tracking.py \
@@ -49,6 +55,7 @@ from gym.utils.helpers import set_seed  # noqa: E402
 from gym.utils.task_registry import task_registry  # noqa: E402
 
 CONTACT_THRESHOLD_N = 1.0
+FAST_SETTLE_S = 1.0
 
 
 def get_args(argv=None):
@@ -203,6 +210,7 @@ def segment_metrics(t, height, segments, failures, steady_s, band, hold):
             settling_time(t[sel], err[e], start, band, hold, dt)
             for e in range(height.shape[0])
         ]
+        steady_mean = steady_err.mean(dim=1)
         rows.append(
             {
                 "segment": index,
@@ -216,19 +224,23 @@ def segment_metrics(t, height, segments, failures, steady_s, band, hold):
                 if any(math.isnan(x) for x in settle)
                 else max(settle),
                 "envs_not_settled": sum(math.isnan(s) for s in settle),
+                "envs_steady_mean_in_band": int((steady_mean.abs() <= band).sum()),
                 "envs_first_tracking_failure_here": sum(
                     f["tracking"] is not None and start < f["tracking"]["time_s"] <= end
                     for f in failures
                 ),
+                # JSON only (not a CSV column); None = never settled.
+                "settle_s_per_env": [None if math.isnan(x) else x for x in settle],
             }
         )
     return rows
 
 
 def summarize(failures):
+    """Stability only: no failure is STABLE even if the height is off."""
     failed = [f for f in failures if f["init"] or f["tracking"]]
     return {
-        "status": "FAILED" if failed else "PASS",
+        "stability_status": "FAILED" if failed else "STABLE",
         "envs": len(failures),
         "envs_failed": len(failed),
         "envs_failed_init": sum(f["init"] is not None for f in failures),
@@ -237,7 +249,34 @@ def summarize(failures):
     }
 
 
-def plot(path, t, cmd, height, tilt, segments, rows, summary, args):
+def tracking_summary(rows, fast_s=FAST_SETTLE_S):
+    """Per commanded height, over all its segments and envs: settling counts."""
+    by_command = {}
+    for row in rows:
+        entry = by_command.setdefault(
+            f"{row['command_m']:.3f}",
+            {
+                "env_segments": 0,
+                f"settled_within_{fast_s:g}s": 0,
+                f"settled_after_{fast_s:g}s": 0,
+                "not_settled": 0,
+                "settle_s_max": None,
+                "steady_mean_in_band": 0,
+            },
+        )
+        entry["env_segments"] += len(row["settle_s_per_env"])
+        entry["steady_mean_in_band"] += row["envs_steady_mean_in_band"]
+        for s in row["settle_s_per_env"]:
+            if s is None:
+                entry["not_settled"] += 1
+                continue
+            key = "within" if s <= fast_s else "after"
+            entry[f"settled_{key}_{fast_s:g}s"] += 1
+            entry["settle_s_max"] = max(s, entry["settle_s_max"] or 0.0)
+    return by_command
+
+
+def plot(path, t, cmd, height, tilt, segments, rows, summary, tracking, args):
     fig, (ax_h, ax_t) = plt.subplots(
         2, 1, figsize=(10, 6), sharex=True, height_ratios=[3, 1]
     )
@@ -261,15 +300,21 @@ def plot(path, t, cmd, height, tilt, segments, rows, summary, args):
     ax_h.set_ylabel("base height [m]")
     ax_h.legend(loc="lower right")
     status = (
-        f"FAILED: {summary['envs_failed']}/{summary['envs']} envs "
+        f"stability FAILED: {summary['envs_failed']}/{summary['envs']} envs "
         f"(init {summary['envs_failed_init']}, "
         f"tracking {summary['envs_failed_tracking']})"
         if summary["envs_failed"]
-        else "PASS: no failures"
+        else "stability: no failures"
+    )
+    settled = ", ".join(
+        f"{c} m {v['env_segments'] - v['not_settled']}/{v['env_segments']}"
+        for c, v in tracking.items()
     )
     ax_h.set_title(
         f"{args.experiment_name}/{args.load_run} model_{args.checkpoint}, "
-        f"eval seed {args.seed}, {height.shape[0]} envs - {status}",
+        f"eval seed {args.seed}, {height.shape[0]} envs - {status}\n"
+        f"tracking: env-segments settled within ±{args.band * 100:.0f} cm "
+        f"for {args.hold:g} s: {settled}",
         fontsize=10,
     )
     top = ax_h.get_ylim()[1]
@@ -297,17 +342,21 @@ def main():
         t, height, segments, failures, args.steady, args.band, args.hold
     )
     summary = summarize(failures)
+    tracking = tracking_summary(rows)
 
     # Next to the checkpoint, under the gitignored logs/ tree.
     run_dir = Path(GYM_ROOT_DIR) / "logs" / args.experiment_name / args.load_run
     stem = f"height_tracking_model{args.checkpoint}_seed{args.seed}"
     png, table, record = (run_dir / f"{stem}.{x}" for x in ("png", "csv", "json"))
-    plot(png, t, cmd, height, tilt, segments, rows, summary, args)
+    plot(png, t, cmd, height, tilt, segments, rows, summary, tracking, args)
     with open(table, "w", newline="") as f:
-        fields = ["status", *rows[0]]
-        writer = csv.DictWriter(f, fieldnames=fields)
+        fields = ["stability_status", *rows[0]]
+        fields.remove("settle_s_per_env")
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows({"status": summary["status"], **r} for r in rows)
+        writer.writerows(
+            {"stability_status": summary["stability_status"], **r} for r in rows
+        )
     record.write_text(
         json.dumps(
             {
@@ -316,6 +365,7 @@ def main():
                 "contact_threshold_n": CONTACT_THRESHOLD_N,
                 "segments": segments,
                 **summary,
+                "tracking_by_command": tracking,
                 "segment_metrics": rows,
             },
             indent=2,
@@ -323,7 +373,7 @@ def main():
     )
 
     print(
-        f"evaluation: {summary['status']} - {summary['envs_failed']}/"
+        f"stability: {summary['stability_status']} - {summary['envs_failed']}/"
         f"{summary['envs']} envs failed (init {summary['envs_failed_init']}, "
         f"tracking {summary['envs_failed_tracking']})"
     )
@@ -346,8 +396,11 @@ def main():
             f"(worst env {r['worst_env_rms_m'] * 100:.1f} cm), "
             f"settle median {median} / worst {worst}, "
             f"{r['envs_not_settled']} not settled, "
+            f"{r['envs_steady_mean_in_band']} steady mean in band, "
             f"{r['envs_first_tracking_failure_here']} first tracking failure(s) here"
         )
+    for command, v in tracking.items():
+        print(f"tracking {command} m: {v}")
     print(f"wrote {png}\nwrote {table}\nwrote {record}")
 
 
